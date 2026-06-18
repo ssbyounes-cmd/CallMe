@@ -4,6 +4,8 @@ import sys
 from src.parser import load_prompts, load_function_defs
 from pydantic import ValidationError # type: ignore (ModuleNotFoundError: No module named 'pydantic')
 from llm_sdk import Small_LLM_Model
+import numpy as np # type: ignore (ModuleNotFoundError: No module named 'numpy')
+from src.decoder import load_vocabulary
 
 
 def main():
@@ -55,7 +57,7 @@ def main():
 
     print("Loading the Qwen3-0.6B model...")
     model = Small_LLM_Model()
-    system_prompt = """What is the sum of 4 and 5?"""
+    system_prompt = """User question:What is the sum of 4 and 5?"""
 
     # 1. Convert the text prompt into a Tensor of Token IDs, then to a standard Python list
     input_ids_tensor = model.encode(system_prompt)
@@ -70,10 +72,21 @@ def main():
     # 2. The Generation Loop (let's force it to generate exactly 30 tokens)
     for _ in range(30):
         # Pass the current sequence to the neural network to get the 100,000+ raw scores
+        vocab = load_vocabulary(model)
+
+
+
         logits = model.get_logits_from_input_ids(input_ids)
         
+        logits_array = np.array(logits)
+
+        mask = np.full(logits_array.shape, float('-inf'))
+
+        mask[[vocab['"']]] = logits_array[[vocab['"']]]
+
+        best_token_id = int(np.argmax(mask))
         # Pick the token ID with the absolute highest score (argmax)
-        best_token_id = logits.index(max(logits))
+        # best_token_id = logits.index(max(logits))
         
         # Add the chosen token ID to our sequence so it's included in the next loop
         input_ids.append(best_token_id)
@@ -87,5 +100,8 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except KeyboardInterrupt:
+        print("\nProcess interrupted by user. Exiting...")
+        sys.exit(0)
     except Exception as e:
         print(f"Unexpected error occurred: {e}")
