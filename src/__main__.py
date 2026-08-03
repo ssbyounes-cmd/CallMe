@@ -5,7 +5,7 @@ from src.parser import load_prompts, load_function_defs
 from pydantic import ValidationError # type: ignore (ModuleNotFoundError: No module named 'pydantic')
 from llm_sdk import Small_LLM_Model
 import numpy as np # type: ignore (ModuleNotFoundError: No module named 'numpy')
-from src.decoder import load_vocabulary
+from src.decoder import load_vocabulary, build_prompt
 
 
 def main():
@@ -57,45 +57,70 @@ def main():
 
     print("Loading the Qwen3-0.6B model...")
     model = Small_LLM_Model()
-    system_prompt = """User question:What is the sum of 4 and 5?"""
+    vocab = load_vocabulary(model) # Do this ONCE outside the loop
 
-    # 1. Convert the text prompt into a Tensor of Token IDs, then to a standard Python list
-    input_ids_tensor = model.encode(system_prompt)
-    input_ids = input_ids_tensor[0].tolist()
+    final_results = [] # Python will store the final outputs here
 
-    print(f"\nPrompt encoded into {len(input_ids)} tokens.")
-    print("Starting generation (Greedy Decoding / NO constraints)...\n")
+    # 1. Loop through the tests one by one
+    for test in tests:
+        print(f"\nProcessing prompt: {test.prompt}")
+        
+        # 2. Build the context for THIS specific test
+        system_prompt = build_prompt(definitions, test.prompt)
+        input_ids = model.encode(system_prompt)[0].tolist()
+        
+        generated_json_string = "" # This tracks what the LLM is spelling!
+        
+        # 3. The Constrained Generation Loop
+        for _ in range(100): # Max tokens to prevent infinite loops
+            logits = model.get_logits_from_input_ids(input_ids)
+            logits_array = np.array(logits)
+            
+            # Create a mask of negative infinity
+            mask = np.full(logits_array.shape, float('-inf'))
+            
+            # =================================================================
+            # 🚨 THE STATE MACHINE GOES HERE 🚨
+            # Look at `generated_json_string`. What state are we in?
+            # 
+            # Example Logic:
+            # if generated_json_string == "":
+            #     target_string = '{"name": "'
+            #     allowed_ids = get_allowed_token_ids(vocab, target_string, generated_json_string)
+            # elif ...
+            # =================================================================
+            
+            # For now, to stop the code from crashing while we build it, 
+            # let's just pretend ALL tokens are allowed (Unconstrained)
+            # Replace this later with: mask[allowed_ids] = logits_array[allowed_ids]
+            mask = logits_array 
+            
+            # 4. Pick the highest allowed score
+            best_token_id = int(np.argmax(mask))
+            
+            # 5. Update the sequence and our string tracker
+            input_ids.append(best_token_id)
+            new_text = model.decode([best_token_id])
+            generated_json_string += new_text
+            
+            print(new_text, end="", flush=True)
+            
+            # 6. Break the loop if the JSON is finished!
+            if generated_json_string.endswith("}"):
+                break
+        
+        # 7. Save the result for this specific prompt
+        final_results.append({
+            "prompt": test.prompt,
+            # We will parse generated_json_string into a real dict later
+            "result_string": generated_json_string 
+        })
     
-    # Print the prompt so we can see the continuation seamlessly
-    print(system_prompt, end="")
-
-    # 2. The Generation Loop (let's force it to generate exactly 30 tokens)
-    for _ in range(30):
-        # Pass the current sequence to the neural network to get the 100,000+ raw scores
-        vocab = load_vocabulary(model)
-
-
-
-        logits = model.get_logits_from_input_ids(input_ids)
-        
-        logits_array = np.array(logits)
-
-        mask = np.full(logits_array.shape, float('-inf'))
-
-        mask[[vocab['"']]] = logits_array[[vocab['"']]]
-
-        best_token_id = int(np.argmax(mask))
-        # Pick the token ID with the absolute highest score (argmax)
-        # best_token_id = logits.index(max(logits))
-        
-        # Add the chosen token ID to our sequence so it's included in the next loop
-        input_ids.append(best_token_id)
-        
-        # Decode ONLY the new token and print it to the terminal live
-        new_text = model.decode([best_token_id])
-        print(new_text, end="", flush=True)
-
+    # 8. Save the final array to data/output/function_calling_results.json
     print("\n\n--- Generation Finished ---")
+    # with open(args.output, 'w') as f:
+    #     json.dump(final_results, f, indent=2)
+
 
 if __name__ == "__main__":
     try:

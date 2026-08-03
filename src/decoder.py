@@ -8,3 +8,13 @@ def load_vocabulary(model: Small_LLM_Model) -> dict[str, int]:
     with open(vocab_path, "r", encoding="utf-8") as f:
         # This returns a dictionary like {"Hello": 1234, "fn_": 567, ...}
         return json.load(f)
+
+
+def build_prompt(definitions, user_prompt):
+    """Builds the context menu for a SINGLE test."""
+    context = "You have access to the following functions:\n"
+    for fn in definitions:
+        context += f"- {fn.name}: {fn.description}\n"
+    context += f"\nUser question: {user_prompt}\n"
+    context += "Response:\n"
+    return context
