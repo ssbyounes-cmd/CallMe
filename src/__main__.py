@@ -5,7 +5,7 @@ from src.parser import load_prompts, load_function_defs
 from pydantic import ValidationError # type: ignore (ModuleNotFoundError: No module named 'pydantic')
 from llm_sdk import Small_LLM_Model
 import numpy as np # type: ignore (ModuleNotFoundError: No module named 'numpy')
-from src.decoder import load_vocabulary, build_prompt
+from src.decoder import load_vocabulary, build_prompt, get_allowed_token_ids
 
 
 def main():
@@ -89,11 +89,40 @@ def main():
             #     allowed_ids = get_allowed_token_ids(vocab, target_string, generated_json_string)
             # elif ...
             # =================================================================
+            # 🚨 THE STATE MACHINE 🚨
+            # State 0: Forcing the start of the JSON and the "name" key
+            # =================================================================
+            # 🚨 THE REBUILT STATE MACHINE 🚨
+# =================================================================
+            # 🚨 THE REBUILT STATE MACHINE (MINIFIED JSON) 🚨
+            PREFIX = '{"name":"'  # <-- Space removed!
             
-            # For now, to stop the code from crashing while we build it, 
-            # let's just pretend ALL tokens are allowed (Unconstrained)
+            # State 0 & 1: Force the prefix, the name, AND the transition to parameters
+            if '","parameters":{' not in generated_json_string: # <-- Spaces removed!
+                
+                # Build the FULL valid paths from the very beginning. 
+                # Target example: '{"name":"fn_add_numbers","parameters":{'
+                valid_targets = [f'{PREFIX}{fn.name}","parameters":{{' for fn in definitions]
+                
+                allowed_ids = get_allowed_token_ids(vocab, valid_targets, generated_json_string)
+                
+                if allowed_ids:
+                    mask[allowed_ids] = logits_array[allowed_ids]
+                else:
+                    # A safety net so we don't infinite scream. 
+                    print(f"\n[DEBUG ERROR] No allowed IDs found for string: {generated_json_string}")
+                    break
+            
+            else:
+                # State 2: We are inside the parameters!
+                # For now, let's leave it unconstrained just to test if State 0/1 works
+                mask = logits_array 
+            # =================================================================
+            # =================================================================
+
+
             # Replace this later with: mask[allowed_ids] = logits_array[allowed_ids]
-            mask = logits_array 
+            # mask = logits_array 
             
             # 4. Pick the highest allowed score
             best_token_id = int(np.argmax(mask))
