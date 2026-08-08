@@ -130,8 +130,8 @@ def main():
                 # 2. Extract the content inside the parameters dictionary so far
                 params_string = generated_json_string.split('","parameters":{')[1]
                 
-                # We split by comma to see what the *current* parameter chunk looks like
-                current_chunk = params_string.split(',')[-1]
+                # Splitting with commas is tricky because values can contain commas and it can break the logic.
+                current_chunk = params_string
                 
                 # =============================================================
                 # STATE 2A: Spelling a KEY (No colon in the current chunk yet)
